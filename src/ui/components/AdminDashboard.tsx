@@ -1,9 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Server, Plus, Trash2, Cpu, Globe, ArrowLeft, Terminal, Users } from 'lucide-react';
+import { Shield, Server, Plus, Trash2, Cpu, Globe, ArrowLeft, Terminal, Users, Search, Save } from 'lucide-react';
+import { db } from '../../config/firebase';
+import { ref, get, update, set } from 'firebase/database';
+import { useAuth } from '../AuthContext';
+import type { SimulationPlayer } from '../../game/types/simulation';
 
 export const AdminDashboard = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [scannedPlayers, setScannedPlayers] = useState<(SimulationPlayer & { foundInRealm: string })[]>([]);
+    const [loadingScan, setLoadingScan] = useState(false);
     const [realms, setRealms] = useState([
         { id: 'VALHALL', riders: 12, status: 'Active', load: '12%' },
         { id: 'MIDGARD', riders: 45, status: 'Active', load: '45%' },
@@ -14,6 +22,66 @@ export const AdminDashboard = () => {
         const name = prompt('Navn på nytt rike:');
         if (name) {
             setRealms([...realms, { id: name.toUpperCase(), riders: 0, status: 'Provisioning', load: '0%' }]);
+        }
+    };
+
+    const scanForOrphans = async () => {
+        setLoadingScan(true);
+        setScannedPlayers([]);
+        const realmsToScan = ['VALHALL', 'MIDGARD', 'NIDAVELLIR'];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allFound: (SimulationPlayer & { foundInRealm: string })[] = [];
+
+        try {
+            console.log("Starting scan...");
+            for (const realm of realmsToScan) {
+                console.log(`Scanning ${realm}...`);
+                const snapshot = await get(ref(db, `rooms/${realm}/players`));
+                if (snapshot.exists()) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const players: SimulationPlayer[] = Object.values(snapshot.val() as any);
+                    console.log(`Found ${players.length} in ${realm}`);
+                    players.forEach(p => allFound.push({ ...p, foundInRealm: realm }));
+                } else {
+                    console.log(`No players in ${realm}`);
+                }
+            }
+
+            console.log("Total found:", allFound.length);
+            setScannedPlayers(allFound);
+            if (allFound.length === 0) {
+                alert("Søk ferdig: Fant INGEN spillere i databasen.");
+            }
+        } catch (error) {
+            console.error("Scan failed:", error);
+            alert("Kunne ikke scanne - sjekk konsoll (F12) for detaljer.");
+        } finally {
+            setLoadingScan(false);
+        }
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const claimCharacter = async (char: SimulationPlayer & { foundInRealm: string }) => {
+        if (!user || !window.confirm(`Er du sikker på at du vil koble "${char.name}" (fra ${char.foundInRealm}) til din konto?`)) return;
+
+        try {
+            // 1. Update Character UID using the realm found
+            await update(ref(db, `rooms/${char.foundInRealm}/players/${char.id}`), { uid: user.uid });
+
+            // 2. Add to Account Roster for that specific realm
+            const rosterPath = `accounts/${user.uid}/characterRoster/${char.foundInRealm}`;
+            const rosterSnap = await get(ref(db, rosterPath));
+            const currentRoster = rosterSnap.exists() ? rosterSnap.val() : [];
+
+            if (!currentRoster.includes(char.id)) {
+                await set(ref(db, rosterPath), [...currentRoster, char.id]);
+            }
+
+            alert(`Suksess! "${char.name}" er reddet i ${char.foundInRealm}.`);
+            scanForOrphans(); // Refresh
+        } catch (error) {
+            console.error("Claim failed:", error);
+            alert("Redning feilet.");
         }
     };
 
@@ -108,6 +176,55 @@ export const AdminDashboard = () => {
                             </div>
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* RESCUE TOOL */}
+            <div className="max-w-6xl mx-auto mt-12 bg-amber-950/20 border border-amber-500/20 rounded-[2.5rem] overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+                <div className="p-8 border-b border-amber-500/10 flex items-center justify-between bg-amber-900/10 backdrop-blur-md">
+                    <h2 className="text-lg font-black text-amber-500 flex items-center gap-3">
+                        <Search size={20} /> Character Rescue Tool (Emergency)
+                    </h2>
+                    <button
+                        onClick={scanForOrphans}
+                        disabled={loadingScan}
+                        className="bg-amber-600 hover:bg-amber-500 text-amber-950 px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                    >
+                        {loadingScan ? <Cpu className="animate-spin" size={16} /> : <Search size={16} />}
+                        Scan Valhall
+                    </button>
+                </div>
+
+                <div className="max-h-96 overflow-y-auto custom-scrollbar p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {scannedPlayers.map((player) => (
+                        <div key={player.id} className="bg-slate-900 border border-white/5 p-4 rounded-2xl flex flex-col gap-2 group hover:border-amber-500/30 transition-colors">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h3 className="font-bold text-white text-sm">{player.name} <span className="text-[9px] text-amber-500/50 ml-2">({player.foundInRealm})</span></h3>
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-widest">{player.role} • Lvl {player.stats?.level || 1}</p>
+                                    <p className="text-[9px] text-slate-600 font-mono mt-1">{player.id}</p>
+                                    <p className="text-[9px] text-slate-600 font-mono">UID: {player.uid?.substring(0, 8)}...</p>
+                                </div>
+                                {user && player.uid !== user.uid && (
+                                    <button
+                                        onClick={() => claimCharacter(player)}
+                                        className="bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-emerald-950 p-2 rounded-lg transition-all"
+                                        title="Claim Ownership"
+                                    >
+                                        <Save size={16} />
+                                    </button>
+                                )}
+                                {user && player.uid === user.uid && (
+                                    <span className="text-emerald-500 text-[10px] uppercase font-black tracking-widest bg-emerald-500/10 px-2 py-1 rounded">Eier</span>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    {scannedPlayers.length === 0 && !loadingScan && (
+                        <div className="col-span-full text-center text-slate-600 italic py-8">
+                            Klikk "Scan Valhall" for å finne tapte sjeler...
+                        </div>
+                    )}
                 </div>
             </div>
 

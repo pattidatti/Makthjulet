@@ -7,9 +7,12 @@ import {
     signOut,
     GoogleAuthProvider,
     signInWithPopup,
+    linkWithPopup,
+    linkWithCredential,
+    EmailAuthProvider,
     type User
 } from 'firebase/auth';
-import { ref, onValue, set, get } from 'firebase/database';
+import { ref, onValue, set, get, update } from 'firebase/database';
 import { auth, db } from '../config/firebase';
 import type { SimulationAccount, SimulationPlayer } from '../game/types/simulation';
 
@@ -22,6 +25,7 @@ interface AuthContextType {
     logout: () => Promise<void>;
     loginWithGoogle: () => Promise<void>;
     createCharacter: (realmId: string, name: string) => Promise<SimulationPlayer>;
+    convertGuestToEmail: (email: string, pass: string, name: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -124,8 +128,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const loginWithGoogle = async () => {
         const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
+
+        if (auth.currentUser && auth.currentUser.isAnonymous) {
+            try {
+                console.log("Attempting to link Guest account to Google...");
+                await linkWithPopup(auth.currentUser, provider);
+                console.log("Link successful! Guest UID preserved.");
+            } catch (error: any) {
+                if (error.code === 'auth/credential-already-in-use') {
+                    console.warn("Google account already exists. Switching to main account (Guest data will be lost/orphaned).");
+                    await signInWithPopup(auth, provider);
+                } else {
+                    console.error("Link Error:", error);
+                    throw error;
+                }
+            }
+        } else {
+            await signInWithPopup(auth, provider);
+        }
         // Account initialization is handled by onAuthStateChanged
+    };
+
+    const convertGuestToEmail = async (email: string, pass: string, name: string) => {
+        if (!auth.currentUser || !auth.currentUser.isAnonymous) {
+            throw new Error("Bare gjestekontoer kan oppgraderes her.");
+        }
+
+        const credential = EmailAuthProvider.credential(email, pass);
+        const result = await linkWithCredential(auth.currentUser, credential);
+        console.log("Guest converted to Email. UID preserved:", result.user.uid);
+
+        // Update the display name for the existing account
+        const accountRef = ref(db, `accounts/${result.user.uid}`);
+        await update(accountRef, { displayName: name });
     };
 
     const createCharacter = async (realmId: string, name: string): Promise<SimulationPlayer> => {
@@ -166,7 +201,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <AuthContext.Provider value={{ user, account, loading, login, register, logout, loginWithGoogle, createCharacter }}>
+        <AuthContext.Provider value={{ user, account, loading, login, register, logout, loginWithGoogle, createCharacter, convertGuestToEmail }}>
             {loading ? (
                 <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4 z-[9999]">
                     <div className="w-16 h-16 border-4 border-orange-900/20 border-t-orange-600 rounded-full animate-spin shadow-[0_0_20px_rgba(234,179,8,0.2)]" />

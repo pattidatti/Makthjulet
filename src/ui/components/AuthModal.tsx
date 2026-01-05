@@ -10,7 +10,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-    const { login, register, loginWithGoogle } = useAuth();
+    const { login, register, loginWithGoogle, user, convertGuestToEmail } = useAuth();
     const [isRegister, setIsRegister] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -26,7 +26,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         setError(null);
         try {
             if (isRegister) {
-                await register(email, password, name);
+                if (user && user.isAnonymous) {
+                    await convertGuestToEmail(email, password, name);
+                } else {
+                    await register(email, password, name);
+                }
             } else {
                 await login(email, password);
             }

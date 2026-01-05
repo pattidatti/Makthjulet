@@ -53,9 +53,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const user = get().user;
 
         // Presence Cleanup (Remove self when disconnecting)
+        // Presence System - Mark as online/offline instead of deleting
         if (user) {
             const playerRef = ref(db, `rooms/${roomId}/players/${user.id}`);
-            onDisconnect(playerRef).remove().catch(err => {
+
+            // Set online status
+            update(playerRef, { isOnline: true });
+
+            // On disconnect, mark as offline (DO NOT DELETE)
+            onDisconnect(playerRef).update({ isOnline: false }).catch(err => {
                 console.error("[Store] Failed to setup onDisconnect:", err);
             });
         }
