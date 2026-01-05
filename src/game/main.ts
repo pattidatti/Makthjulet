@@ -1,7 +1,7 @@
 
 import { MainScene } from './scenes/MainScene';
+import { DebugScene } from './scenes/DebugScene';
 import { AUTO, Game } from 'phaser';
-
 
 //  Find out more information about the Game Config at:
 //  https://newdocs.phaser.io/docs/3.70.0/Phaser.Types.Core.GameConfig
@@ -15,8 +15,16 @@ const config: Phaser.Types.Core.GameConfig = {
         mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH
     },
+    physics: {
+        default: 'arcade',
+        arcade: {
+            gravity: { y: 0, x: 0 }, // Top down game, so no gravity
+            debug: false // Disable debug for cleaner look
+        }
+    },
     scene: [
-        MainScene
+        MainScene,
+        DebugScene
     ]
 };
 

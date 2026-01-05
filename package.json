@@ -12,9 +12,12 @@
   "dependencies": {
     "events": "^3.3.0",
     "firebase": "^12.7.0",
+    "lucide-react": "^0.562.0",
     "phaser": "^3.90.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.11.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
